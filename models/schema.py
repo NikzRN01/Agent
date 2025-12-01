@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserHealthProfile(BaseModel):
@@ -9,9 +9,9 @@ class UserHealthProfile(BaseModel):
     carb_target_g: int = 230
     fat_target_g: int = 70
     meals_per_day: int = 3
-    allergies: List[str] = []
-    dislikes: List[str] = []
-    health_notes: List[str] = []
+    allergies: List[str] = Field(default_factory=list)
+    dislikes: List[str] = Field(default_factory=list)
+    health_notes: List[str] = Field(default_factory=list)
 
 
 class Ingredient(BaseModel):
