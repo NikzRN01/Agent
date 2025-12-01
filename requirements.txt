@@ -1,1 +1,2 @@
-# No external dependencies required for the minimal scaffold
+# Project dependencies
+pydantic>=1.10.0
