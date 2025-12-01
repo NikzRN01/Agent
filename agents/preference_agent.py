@@ -1,17 +1,23 @@
-class PreferenceAgent:
-    """Simple preference agent placeholder."""
-    def __init__(self, preferences=None):
-        self.preferences = preferences or {}
+from models.schema import UserHealthProfile
 
-    def filter_recipes(self, recipes):
-        """Return recipes that match simple preferences (e.g., exclude ingredients)."""
-        exclude = set(self.preferences.get("exclude_ingredients", []))
-        if not exclude:
-            return recipes
-        filtered = []
-        for r in recipes:
-            ingredients = set(r.get("ingredients", []))
-            if ingredients & exclude:
-                continue
-            filtered.append(r)
-        return filtered
+
+class PreferenceAgent:
+    """
+    Collects user preferences and returns a structured UserHealthProfile.
+    In the real system, this would ask questions or use an LLM.
+    """
+
+    def get_user_profile(self) -> UserHealthProfile:
+        # TODO: replace with actual interaction / LLM parsing
+        profile = UserHealthProfile(
+            diet_type="vegetarian",
+            daily_calorie_target=2200,
+            protein_target_g=100,
+            carb_target_g=230,
+            fat_target_g=70,
+            meals_per_day=3,
+            allergies=["peanut"],
+            dislikes=["broccoli"],
+            health_notes=["low_sugar"]
+        )
+        return profile
