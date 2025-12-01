@@ -1,0 +1,20 @@
+[
+  {
+    "id": "r1",
+    "title": "Simple Salad",
+    "ingredients": ["lettuce", "tomato", "cucumber", "olive oil"],
+    "steps": ["Chop vegetables", "Toss with oil"]
+  },
+  {
+    "id": "r2",
+    "title": "Pasta with Tomato",
+    "ingredients": ["pasta", "tomato", "garlic", "olive oil"],
+    "steps": ["Boil pasta", "Cook sauce"]
+  },
+  {
+    "id": "r3",
+    "title": "Chicken Stir Fry",
+    "ingredients": ["chicken", "broccoli", "soy sauce"],
+    "steps": ["Cook chicken", "Add veggies"]
+  }
+]
