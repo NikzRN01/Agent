@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from typing import Dict
 from models.schema import WeekPlan, Ingredient, UserHealthProfile
-
 
 class ShoppingBudgetAgent:
     """
@@ -79,7 +80,6 @@ Dependencies (install once):
     pip install requests beautifulsoup4
 """
 
-from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 import re

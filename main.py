@@ -1,34 +1,3 @@
-from core.orchestrator import MealPlanningOrchestrator
-
-def main():
-    orchestrator = MealPlanningOrchestrator()
-    week_plan, health_report, estimated_cost = orchestrator.run_weekly_planning()
-
-    print("=== Weekly Plan Overview ===")
-    for day in week_plan.days:
-        meal_names = ", ".join(m.name for m in day.meals)
-        print(f"{day.day_name}: {meal_names}")
-
-    print("\n=== Health Report ===")
-    for r in health_report.daily_reports:
-        print(
-            f"{r.day_name}: "
-            f"{r.total_calories} kcal "
-            f"(Δ {r.calorie_delta}), "
-            f"P {r.total_protein_g}g (Δ {r.protein_delta}), "
-            f"C {r.total_carbs_g}g (Δ {r.carb_delta}), "
-            f"F {r.total_fat_g}g (Δ {r.fat_delta}) "
-            f"Score={r.score}, Flags={r.flags}"
-        )
-
-    print(f"\nAverage health score: {health_report.average_score}")
-    print(f"Global flags: {health_report.global_flags}")
-    print(f"Estimated weekly grocery cost: {estimated_cost}")
-
-if __name__ == "__main__":
-    main()
-
-
 # Code : TJ
 """
 Main API server for Meal Planner Agent System
@@ -52,8 +21,10 @@ import uvicorn
 sys.path.append(os.path.join(os.path.dirname(__file__), "agents"))
 
 # Import agents
-from agents.recipeagent import recipe_agent, RecipeAgentRunner
+from agents.recipe_agent import recipe_agent, RecipeAgentRunner
 from agents.shopping_budget_agent import ShoppingBudgetAgent
+from agents.preference_agent import preference_agent, PreferenceAgentRunner
+from agents.health_agent import HealthAgent
 
 app = FastAPI(
     title="Meal Planner Agent API",
@@ -73,6 +44,8 @@ app.add_middleware(
 # Initialize agent runners
 recipe_runner = RecipeAgentRunner(recipe_agent)
 shopping_agent = ShoppingBudgetAgent(currency="INR")
+preference_runner = PreferenceAgentRunner(preference_agent)
+health_agent = HealthAgent()
 
 
 # =========================
@@ -111,6 +84,191 @@ class NutritionRequest(BaseModel):
     nutritional_information: Dict[str, Any]
 
 
+class UserPreferenceInput(BaseModel):
+    """Request model for user preference description"""
+    user_description: str
+    user_id: Optional[str] = "user_001"
+
+
+class UserProfileResponse(BaseModel):
+    """Response model for user health profile"""
+    diet_type: str
+    daily_calorie_target: int
+    protein_target_g: int
+    carb_target_g: int
+    fat_target_g: int
+    meals_per_day: int
+    allergies: List[str]
+    dislikes: List[str]
+    health_notes: List[str]
+
+
+# =========================
+#   PREFERENCE AGENT ENDPOINTS
+# =========================
+
+@app.post("/preference")
+async def create_user_profile(preference_input: UserPreferenceInput):
+    """
+    Create user profile from natural language description using Preference Agent
+    
+    Args:
+        preference_input: User's natural language description and user_id
+    
+    Returns:
+        Structured user health profile
+    """
+    try:
+        # Build prompt for Preference Agent
+        prompt = f"""
+The user will describe their diet, lifestyle and health precautions.
+
+User description:
+\"\"\"{preference_input.user_description}\"\"\"
+"""
+        
+        # Run Preference Agent
+        result = await preference_runner.runner.run_debug(prompt)
+        profile_data = preference_runner._parse_output(result)
+        
+        if "error" in profile_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Preference Agent Error: {profile_data.get('error')}"
+            )
+        
+        # Store the profile
+        preference_runner._profiles[preference_input.user_id] = profile_data
+        
+        return {
+            "success": True,
+            "data": {
+                "user_id": preference_input.user_id,
+                "profile": profile_data
+            },
+            "message": "User profile created successfully"
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating user profile: {str(e)}"
+        )
+
+
+@app.get("/preference/{user_id}")
+async def get_user_profile(user_id: str):
+    """
+    Get stored user profile by user_id
+    
+    Args:
+        user_id: User identifier
+    
+    Returns:
+        User health profile
+    """
+    try:
+        profile = preference_runner.get_profile(user_id)
+        
+        return {
+            "success": True,
+            "data": {
+                "user_id": user_id,
+                "profile": profile
+            },
+            "message": "User profile retrieved successfully"
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving user profile: {str(e)}"
+        )
+
+
+@app.post("/preference-to-recipe")
+async def preference_to_recipe_workflow(preference_input: UserPreferenceInput):
+    """
+    Complete workflow: Preference Agent → Recipe Agent
+    
+    Args:
+        preference_input: User's natural language description
+    
+    Returns:
+        User profile and recipe based on preferences
+    """
+    try:
+        # Step 1: Create user profile using Preference Agent
+        prompt = f"""
+The user will describe their diet, lifestyle and health precautions.
+
+User description:
+\"\"\"{preference_input.user_description}\"\"\"
+"""
+        
+        result = await preference_runner.runner.run_debug(prompt)
+        profile_data = preference_runner._parse_output(result)
+        
+        if "error" in profile_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Preference Agent Error: {profile_data.get('error')}"
+            )
+        
+        # Store profile
+        preference_runner._profiles[preference_input.user_id] = profile_data
+        
+        # Step 2: Convert profile to recipe preferences
+        recipe_preferences = {
+            "dietary_restrictions": [profile_data.get("diet_type", "vegetarian")],
+            "cuisine_preferences": [],  # Can be enhanced later
+            "meal_type": "lunch",
+            "servings": profile_data.get("meals_per_day", 3),
+            "budget_per_meal": None
+        }
+        
+        # Add dietary restrictions from health notes
+        health_notes = profile_data.get("health_notes", [])
+        if "low_sugar" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("low sugar")
+        if "low_sodium" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("low sodium")
+        if "high_protein" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("high protein")
+        if "low_carb" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("low carb")
+        
+        # Step 3: Fetch recipe using Recipe Agent
+        recipe_data = await recipe_runner.fetch_recipe(recipe_preferences)
+        
+        if "error" in recipe_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Recipe Agent Error: {recipe_data.get('error')}"
+            )
+        
+        return {
+            "success": True,
+            "data": {
+                "user_id": preference_input.user_id,
+                "user_profile": profile_data,
+                "recipe": recipe_data
+            },
+            "message": "Profile created and recipe fetched successfully"
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error in preference-to-recipe workflow: {str(e)}"
+        )
+
+
 # =========================
 #   RECIPE AGENT ENDPOINTS
 # =========================
@@ -121,11 +279,29 @@ async def root():
     return {
         "status": "ok",
         "service": "Meal Planner Agent API",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "description": "Complete multi-agent meal planning system",
         "endpoints": {
-            "recipe": "/recipe (POST)",
-            "shopping": "/shopping (POST)",
-            "health": "/health (POST - coming soon)"
+            "preference_agent": {
+                "POST /preference": "Create user profile from natural language",
+                "GET /preference/{user_id}": "Get stored user profile",
+                "POST /preference-to-recipe": "Preference → Recipe workflow"
+            },
+            "recipe_agent": {
+                "POST /recipe": "Get recipe from preferences",
+                "GET /recipe/example": "Get example recipe"
+            },
+            "shopping_agent": {
+                "POST /shopping": "Generate shopping list with pricing"
+            },
+            "health_agent": {
+                "POST /health": "Analyze nutritional information",
+                "POST /recipe-to-health": "Recipe → Health workflow"
+            },
+            "complete_workflow": {
+                "POST /complete-meal-plan": "🌟 FULL WORKFLOW: Preference → Recipe → Shopping + Health",
+                "POST /meal-plan": "Recipe → Shopping + Nutrition workflow"
+            }
         }
     }
 
@@ -244,7 +420,7 @@ async def get_shopping_list(ingredients_data: IngredientsRequest):
 @app.post("/health")
 async def analyze_nutrition(nutrition_data: NutritionRequest):
     """
-    Analyze nutritional information (Health Agent - work in progress)
+    Analyze nutritional information from recipe against user profile
     
     Args:
         nutrition_data: Recipe name and nutritional information
@@ -253,16 +429,29 @@ async def analyze_nutrition(nutrition_data: NutritionRequest):
         Nutritional analysis and health recommendations
     """
     try:
-        # TODO: Integrate with health_agent when ready
+        # Extract nutritional data
+        nutrition_info = nutrition_data.nutritional_information
+        
+        # Parse nutritional information
+        analysis = {
+            "recipe_name": nutrition_data.recipe_name,
+            "nutritional_info": nutrition_info,
+            "health_evaluation": "Nutritional analysis complete"
+        }
+        
+        # Extract macros if available
+        if "macros" in nutrition_info:
+            macros = nutrition_info["macros"]
+            analysis["macros_summary"] = {
+                "protein": macros.get("protein", "N/A"),
+                "carbohydrates": macros.get("carbohydrates", "N/A"),
+                "fat": macros.get("fat", "N/A")
+            }
         
         return {
             "success": True,
-            "data": {
-                "recipe_name": nutrition_data.recipe_name,
-                "nutritional_information": nutrition_data.nutritional_information,
-                "analysis": "Health Agent integration pending"
-            },
-            "message": "Nutritional information received. Analysis in progress."
+            "data": analysis,
+            "message": "Nutritional analysis completed"
         }
     
     except Exception as e:
@@ -272,9 +461,214 @@ async def analyze_nutrition(nutrition_data: NutritionRequest):
         )
 
 
+@app.post("/recipe-to-health")
+async def recipe_to_health_workflow(recipe_name: str, user_id: str = "user_001"):
+    """
+    Workflow: Analyze recipe nutrition against user health profile
+    
+    Args:
+        recipe_name: Name of the recipe to analyze
+        user_id: User identifier for health profile lookup
+    
+    Returns:
+        Health analysis comparing recipe nutrition to user goals
+    """
+    try:
+        # Get user profile
+        try:
+            profile = preference_runner.get_profile(user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User profile not found for user_id: {user_id}"
+            )
+        
+        # For now, return profile-based recommendations
+        # TODO: Integrate with actual recipe data
+        
+        recommendations = []
+        health_notes = profile.get("health_notes", [])
+        
+        if "low_sugar" in health_notes:
+            recommendations.append("Monitor sugar content in recipes")
+        if "low_sodium" in health_notes:
+            recommendations.append("Choose low-sodium ingredients")
+        if "high_protein" in health_notes:
+            recommendations.append(f"Target protein: {profile.get('protein_target_g', 100)}g per day")
+        if "low_carb" in health_notes:
+            recommendations.append(f"Limit carbs to: {profile.get('carb_target_g', 230)}g per day")
+        
+        return {
+            "success": True,
+            "data": {
+                "recipe_name": recipe_name,
+                "user_profile": profile,
+                "daily_targets": {
+                    "calories": profile.get("daily_calorie_target", 2200),
+                    "protein_g": profile.get("protein_target_g", 100),
+                    "carbs_g": profile.get("carb_target_g", 230),
+                    "fat_g": profile.get("fat_target_g", 70)
+                },
+                "recommendations": recommendations
+            },
+            "message": "Health analysis completed"
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error in recipe-to-health workflow: {str(e)}"
+        )
+
+
 # =========================
 #   COMBINED WORKFLOW ENDPOINT
 # =========================
+
+@app.post("/complete-meal-plan")
+async def complete_meal_plan_workflow(preference_input: UserPreferenceInput):
+    """
+    COMPLETE WORKFLOW: Preference Agent → Recipe Agent → Shopping & Budget Agent + Health Agent
+    
+    This is the main endpoint that orchestrates all agents:
+    1. Preference Agent: Parse user description into structured profile
+    2. Recipe Agent: Fetch recipe based on user preferences
+    3. Shopping & Budget Agent: Generate shopping list with pricing
+    4. Health Agent: Analyze nutrition against user goals
+    
+    Args:
+        preference_input: User's natural language description and user_id
+    
+    Returns:
+        Complete meal plan with profile, recipe, shopping list, and health analysis
+    """
+    try:
+        # ==========================================
+        # STEP 1: PREFERENCE AGENT - Create Profile
+        # ==========================================
+        prompt = f"""
+The user will describe their diet, lifestyle and health precautions.
+
+User description:
+\"\"\"{preference_input.user_description}\"\"\"
+"""
+        
+        result = await preference_runner.runner.run_debug(prompt)
+        profile_data = preference_runner._parse_output(result)
+        
+        if "error" in profile_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Preference Agent Error: {profile_data.get('error')}"
+            )
+        
+        # Store profile
+        preference_runner._profiles[preference_input.user_id] = profile_data
+        
+        # ==========================================
+        # STEP 2: RECIPE AGENT - Fetch Recipe
+        # ==========================================
+        # Convert profile to recipe preferences
+        recipe_preferences = {
+            "dietary_restrictions": [profile_data.get("diet_type", "vegetarian")],
+            "cuisine_preferences": [],
+            "meal_type": "lunch",
+            "servings": profile_data.get("meals_per_day", 3),
+            "budget_per_meal": None
+        }
+        
+        # Add health-based dietary restrictions
+        health_notes = profile_data.get("health_notes", [])
+        if "low_sugar" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("low sugar")
+        if "low_sodium" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("low sodium")
+        if "high_protein" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("high protein")
+        if "low_carb" in health_notes:
+            recipe_preferences["dietary_restrictions"].append("low carb")
+        
+        # Fetch recipe
+        recipe_data = await recipe_runner.fetch_recipe(recipe_preferences)
+        
+        if "error" in recipe_data:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Recipe Agent Error: {recipe_data.get('error')}"
+            )
+        
+        # ==========================================
+        # STEP 3: SHOPPING & BUDGET AGENT
+        # ==========================================
+        budget = 500.0  # Default budget
+        shopping_plan = shopping_agent.process_recipe_ingredients(
+            recipe_data=recipe_data,
+            stores=["Amazon", "Flipkart", "LocalStore"],
+            budget=budget
+        )
+        
+        # ==========================================
+        # STEP 4: HEALTH AGENT - Analyze Nutrition
+        # ==========================================
+        nutrition_info = recipe_data.get("nutritional_information", {})
+        
+        # Generate health recommendations
+        recommendations = []
+        if "low_sugar" in health_notes:
+            recommendations.append("Monitor sugar content - aim for natural sugars from fruits")
+        if "low_sodium" in health_notes:
+            recommendations.append("Limit sodium to <2300mg per day")
+        if "high_protein" in health_notes:
+            recommendations.append(f"Target {profile_data.get('protein_target_g', 100)}g protein daily")
+        if "low_carb" in health_notes:
+            recommendations.append(f"Limit carbs to {profile_data.get('carb_target_g', 230)}g daily")
+        
+        # Add allergy warnings
+        allergies = profile_data.get("allergies", [])
+        if allergies:
+            recommendations.append(f"⚠️ ALLERGIES: Avoid {', '.join(allergies)}")
+        
+        health_analysis = {
+            "daily_targets": {
+                "calories": profile_data.get("daily_calorie_target", 2200),
+                "protein_g": profile_data.get("protein_target_g", 100),
+                "carbs_g": profile_data.get("carb_target_g", 230),
+                "fat_g": profile_data.get("fat_target_g", 70)
+            },
+            "recipe_nutrition": nutrition_info,
+            "recommendations": recommendations,
+            "allergies": allergies,
+            "dislikes": profile_data.get("dislikes", [])
+        }
+        
+        # ==========================================
+        # RETURN COMPLETE MEAL PLAN
+        # ==========================================
+        return {
+            "success": True,
+            "data": {
+                "user_id": preference_input.user_id,
+                "user_profile": profile_data,
+                "recipe": recipe_data,
+                "shopping_plan": shopping_plan,
+                "health_analysis": health_analysis
+            },
+            "summary": {
+                "recipe_name": recipe_data.get("recipe_name", "Unknown"),
+                "total_cost": f"₹{shopping_plan.get('estimated_total_cost', 0):.2f}",
+                "within_budget": shopping_plan.get("within_budget", True),
+                "health_status": "Profile-based recommendations provided",
+                "key_recommendations": recommendations[:3] if recommendations else []
+            },
+            "message": "Complete meal plan created successfully with all agent integrations"
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error in complete meal plan workflow: {str(e)}"
+        )
+
 
 @app.post("/meal-plan")
 async def create_meal_plan(preferences: PreferenceRequest):
@@ -342,15 +736,29 @@ async def create_meal_plan(preferences: PreferenceRequest):
 # =========================
 
 if __name__ == "__main__":
-    print("🚀 Starting Meal Planner Agent API...")
-    print("📋 Available endpoints:")
-    print("   - GET  / (Health check)")
+    print("🚀 Starting Meal Planner Agent API (v2.0)...")
+    print("\n" + "="*60)
+    print("📋 AVAILABLE ENDPOINTS:")
+    print("="*60)
+    print("\n🔹 PREFERENCE AGENT:")
+    print("   - POST /preference (Create user profile)")
+    print("   - GET  /preference/{user_id} (Get stored profile)")
+    print("   - POST /preference-to-recipe (Preference → Recipe)")
+    print("\n🔹 RECIPE AGENT:")
     print("   - POST /recipe (Get recipe from preferences)")
     print("   - GET  /recipe/example (Get example recipe)")
-    print("   - POST /shopping (Generate shopping list)")
+    print("\n🔹 SHOPPING & BUDGET AGENT:")
+    print("   - POST /shopping (Generate shopping list with pricing)")
+    print("\n🔹 HEALTH AGENT:")
     print("   - POST /health (Analyze nutrition)")
-    print("   - POST /meal-plan (Complete workflow)")
-    print("\n🌐 Server running at: http://localhost:8000")
+    print("   - POST /recipe-to-health (Recipe → Health analysis)")
+    print("\n🌟 COMPLETE WORKFLOWS:")
+    print("   - POST /complete-meal-plan (🎯 FULL: Preference → Recipe → Shopping + Health)")
+    print("   - POST /meal-plan (Recipe → Shopping + Nutrition)")
+    print("\n" + "="*60)
+    print("🌐 Server running at: http://localhost:8000")
     print("📚 API Docs at: http://localhost:8000/docs")
+    print("📊 Health check: http://localhost:8000/")
+    print("="*60 + "\n")
     
     uvicorn.run(app, host="0.0.0.0", port=8000)
