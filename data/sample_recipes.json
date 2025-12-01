@@ -1,0 +1,20 @@
+[
+  {
+    "id": "meal_1",
+    "name": "Veggie Stir Fry",
+    "ingredients": [
+      {"name": "tofu", "quantity": 100, "unit": "g"},
+      {"name": "mixed vegetables", "quantity": 150, "unit": "g"},
+      {"name": "olive oil", "quantity": 10, "unit": "g"}
+    ]
+  },
+  {
+    "id": "meal_2",
+    "name": "Oats with Fruits",
+    "ingredients": [
+      {"name": "oats", "quantity": 60, "unit": "g"},
+      {"name": "milk", "quantity": 200, "unit": "ml"},
+      {"name": "banana", "quantity": 1, "unit": "piece"}
+    ]
+  }
+]
