@@ -49,23 +49,10 @@ Complete Meal Plan
 - `POST /complete-meal-plan` - **RECOMMENDED**: Full workflow using Sequential Agent orchestration
 - `GET /` - Health check and API information
 
-### Legacy Endpoints (Backward Compatible)
-- `POST /complete-meal-plan-legacy` - Old manual chaining approach
-- `POST /preference` - Individual preference agent
-- `POST /recipe` - Individual recipe agent  
-- `POST /shopping` - Individual shopping agent
-- `POST /health` - Individual health agent
-- `POST /preference-to-recipe` - Preference → Recipe workflow
-- `POST /meal-plan` - Recipe → Shopping + Nutrition workflow
-
 ### Memory Endpoints
 - `POST /memory/save-session` - Save session to memory
 - `POST /memory/search` - Search past conversations
 - `GET /memory/stats` - Memory statistics
-
-### Individual Agent Endpoints (Legacy)
-- `GET /preference/{user_id}` - Retrieve stored user profile
-- `GET /recipe/example` - Get example recipe for testing
 
 ## 🚀 Quick Start
 
@@ -107,28 +94,11 @@ API Documentation: `http://localhost:8000/docs`
 ### Option 1: Test Sequential Agent Orchestrator (Recommended)
 ```powershell
 # Test the new Sequential Agent workflow
+python main.py (start the server)
 python test_orchestrator.py
 ```
 
 Choose between interactive or automated mode to test the full orchestration.
-
-### Option 2: API Tests
-```powershell
-# Terminal 1: Start server
-python main.py
-
-# Terminal 2: Run API tests
-python test_api.py
-```
-
-You'll be prompted to enter your dietary preferences interactively.
-
-### Option 3: Direct Agent Testing (Legacy)
-```powershell
-python test_integration.py
-```
-
-Test individual agents using the old manual chaining approach.
 
 ## 📝 Example Usage
 
@@ -291,34 +261,6 @@ uvicorn main:app --port 8001
 ```powershell
 pip install -r requirements.txt
 ```
-
-### Issue: "No recipe_data found"
-**Solution:** Check internet connection (Google Search requires network access)
-
-### Issue: Rate Limits (429 errors)
-**Solution:** The Sequential Agent has enhanced retry logic:
-- 8 retry attempts (up from 5)
-- Exponential backoff with base 10
-- Max delay capped at 60 seconds
-
-### Issue: Memory not persisting
-**Note:** Memory is in-memory only (InMemoryMemoryService):
-- ✅ Fast and free
-- ❌ Data lost on server restart
-- For persistence, upgrade to VertexAIMemoryBankService (requires Google Cloud)
-
-## 📈 Future Enhancements
-
-- [ ] Database integration for persistent storage
-- [ ] Week-long meal planning
-- [ ] Multi-store price comparison
-- [ ] Nutritional database integration
-- [ ] User authentication and history
-- [ ] Mobile app integration
-- [ ] Recipe image generation
-- [ ] Grocery delivery integration
-- [ ] Upgrade to VertexAI Memory for persistent context
-- [ ] A2A Protocol for distributed microservices (when needed)
 
 ## 📚 Learn More
 
