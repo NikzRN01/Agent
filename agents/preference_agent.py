@@ -17,14 +17,17 @@ from typing import Dict, Any, List
 try:
     from google.adk.agents import Agent
     from google.adk.models.google_llm import Gemini
-    from google.adk.runners import InMemoryRunner
+    from google.adk.runners import InMemoryRunner, Runner
+    from google.adk.memory import InMemoryMemoryService
+    from google.adk.sessions import InMemorySessionService
+    from google.adk.tools import load_memory
     from google.genai import types
     from dotenv import load_dotenv
     ADK_AVAILABLE = True
     load_dotenv()
 except Exception:
     ADK_AVAILABLE = False
-    Agent = Gemini = InMemoryRunner = types = None
+    Agent = Gemini = InMemoryRunner = Runner = types = load_memory = None
 
 
 # ===============================
@@ -41,6 +44,17 @@ def setup_api_key():
 
 
 setup_api_key()
+
+# ===============================
+# Memory & Session Services
+# ===============================
+if ADK_AVAILABLE:
+    memory_service = InMemoryMemoryService()
+    session_service = InMemorySessionService()
+    print("✓ Preference Agent: Memory service initialized")
+else:
+    memory_service = None
+    session_service = None
 
 # ===============================
 # Retry Configuration
@@ -66,7 +80,9 @@ if ADK_AVAILABLE:
         name="PreferenceAgent",
         model=Gemini(model="gemini-2.0-flash-lite", retry_options=retry_config),
         instruction="""
-You are a Preference Agent in a multi-agent meal planning system.
+You are a Preference Agent in a multi-agent meal planning system with memory capabilities.
+
+If the user asks about their past preferences or previous conversations, use the load_memory tool to search stored memories.
 
 Your job:
 - Read the user's natural language description of:
@@ -121,8 +137,9 @@ CRITICAL:
 - Only output JSON. No explanations, no markdown, no code fences.
 - All fields MUST be present.
 - All numbers MUST be plain numbers (no quotes, no 'kcal', no 'g'), or null if unknown.
+- Use load_memory tool to recall past user preferences when asked.
 """,
-        tools=[],
+        tools=[load_memory],
         output_key="user_profile"
     )
 

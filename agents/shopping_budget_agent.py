@@ -7,8 +7,10 @@ from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.models.google_llm import Gemini
-from google.adk.runners import InMemoryRunner
-from google.adk.tools import google_search
+from google.adk.runners import InMemoryRunner, Runner
+from google.adk.memory import InMemoryMemoryService
+from google.adk.sessions import InMemorySessionService
+from google.adk.tools import google_search, load_memory
 from google.genai import types
 
 load_dotenv()
@@ -23,6 +25,11 @@ def setup_api_key():
 
 setup_api_key()
 
+# Memory & Session Services
+memory_service = InMemoryMemoryService()
+session_service = InMemorySessionService()
+print("✓ Shopping Agent: Memory service initialized")
+
 retry_config = types.HttpRetryOptions(
     attempts=8, exp_base=10, initial_delay=3, max_delay=60,
     http_status_codes=[429, 500, 503, 504],
@@ -32,7 +39,9 @@ shopping_agent = Agent(
     name="ShoppingAgent",
     model=Gemini(model="gemini-2.0-flash-lite", retry_options=retry_config),
     instruction="""
-You are a Shopping Agent in a meal planning system.
+You are a Shopping Agent in a meal planning system with memory capabilities.
+
+If the user asks about past shopping lists or prices, use the load_memory tool to search stored memories.
 
 Tasks:
 1) From the user's natural-language description, Create a structured ingredients object with descriptive section keys and full ingredient strings including quantities.
@@ -73,8 +82,9 @@ Rules:
 - Use google_search for pricing and URLs; do not invent prices or links.
 - Instructions must be helpful and sequential, starting at step 1.
 - Provide serving_size and a reasonable nutrition range.
+- Use load_memory to recall past shopping data when relevant.
 """,
-    tools=[google_search],
+    tools=[google_search, load_memory],
     output_key="recipe_data",
 )
 

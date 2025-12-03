@@ -13,8 +13,10 @@ This agent receives input from the Preference Agent and:
 import asyncio
 from google.adk.agents import Agent
 from google.adk.models.google_llm import Gemini
-from google.adk.runners import InMemoryRunner
-from google.adk.tools import google_search
+from google.adk.runners import InMemoryRunner, Runner
+from google.adk.memory import InMemoryMemoryService
+from google.adk.sessions import InMemorySessionService
+from google.adk.tools import google_search, load_memory
 from google.genai import types
 from dotenv import load_dotenv
 import json
@@ -36,6 +38,11 @@ def setup_api_key():
 
 setup_api_key()
 
+# Memory & Session Services
+memory_service = InMemoryMemoryService()
+session_service = InMemorySessionService()
+print("✓ Recipe Agent: Memory service initialized")
+
 # Configure retry options
 retry_config = types.HttpRetryOptions(
     attempts=8,  # Maximum retry attempts
@@ -49,7 +56,9 @@ retry_config = types.HttpRetryOptions(
 recipe_agent = Agent(
     name="RecipeAgent",
     model=Gemini(model="gemini-2.0-flash-lite", retry_options=retry_config),
-    instruction="""You are a Recipe Agent in a meal planning system. Your task is to find recipes based on user preferences, including ingredients, step-by-step instructions, and nutritional information.
+    instruction="""You are a Recipe Agent in a meal planning system with memory capabilities. Your task is to find recipes based on user preferences, including ingredients, step-by-step instructions, and nutritional information.
+
+If the user asks about recipes they've tried before or past meal plans, use the load_memory tool to search stored memories.
 
 CRITICAL: You MUST respond with ONLY valid JSON in the EXACT format specified below. Do not include any text before or after the JSON.
 
@@ -107,8 +116,9 @@ IMPORTANT RULES:
 7. Include detailed, helpful descriptions for each step
 8. Provide serving size and estimated nutritional information
 9. Use ranges for nutritional values when appropriate (e.g., "450-550 calories")
-10. Ensure all JSON is properly formatted with correct commas, quotes, and brackets""",
-    tools=[google_search],
+10. Ensure all JSON is properly formatted with correct commas, quotes, and brackets
+11. Use load_memory tool to recall past recipes or user preferences when relevant""",
+    tools=[google_search, load_memory],
     output_key="recipe_data",
 )
 
